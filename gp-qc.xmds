@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<simulation xmds-version="2">
+  <name>groundstate</name>
+  <author>V. Zampronio</author>
+  <description>
+    Calculate the ground state of the 3D GP equation in a gaussian-like magnetic trap
+    with contact and long range interactions.
+    This is done by evolving it in imaginary time while re-normalising each timestep.
+  </description>
+  
+  <features>
+    <openmp />
+    <auto_vectorise />
+    <benchmark />
+    <bing />
+    <fftw plan="exhaustive" />
+    <precision> double </precision>
+    <globals>
+	    <![CDATA[
+        const real Uint = 0;
+        const real Nparticles = 6272;
+        // external potential parameters
+                    const real Vs = 0;
+                    //const real a=0.0211023;
+                    //const real b=275.506;
+                    //const real c=2.0704;
+                    //const real d=0.000136;
+                    //const real e=351.962;
+                    const real a=6.71433;
+                    const real b=0.870835;
+                    const real c=2.06459;
+                    const real d=13.5109;
+                    const real e=1.11784;
+        // long-range interaction
+		    const real R=0.01;
+		    const real Va=100;
+		    const real Vb=0;
+     ]]>
+    </globals>
+  </features>
+  
+  <geometry>
+	  <propagation_dimension> t </propagation_dimension>
+    <transverse_dimensions>
+	    <dimension name="x" lattice="128"  domain="(0, 140)" />
+	    <dimension name="y" lattice="128"  domain="(0, 140)" />
+    </transverse_dimensions>
+  </geometry>
+
+  <vector name="potential" type="real" dimensions="x y">
+    <components> V1 </components>
+    <initialisation>
+	    <![CDATA[
+       real r = 0;
+       r = sqrt(x*x+y*y);
+       V1  = Vs/(1+exp(a*(r-b)))-Vs*c*exp(-d*pow(r-e,2));
+      ]]>
+    </initialisation>
+  </vector>
+
+	    <!-- Although the density is real, we need to Fourier transform it, so it must be complex -->
+  <computed_vector name="density" type="complex">
+  	<components>dens</components>
+	<evaluation>
+		<dependencies>wavefunction</dependencies>
+		<![CDATA[
+			dens = mod2(phi);
+		]]>
+	</evaluation>
+  </computed_vector>
+
+  <computed_vector name="convolution" type="complex">
+  	<components> V_E </components>
+	<evaluation>
+		<!-- 
+		Computation of the convolution in Fourier space.
+		-->
+		<dependencies basis="kx ky"> density</dependencies>
+		<![CDATA[
+			real factor = 0;
+			factor = factor + 20.0;
+			factor = factor - 196.216*(kx*kx+ky*ky);
+			factor = factor + 1063.67*pow(kx*kx+ky*ky,2);
+			factor = factor - 2679.61*pow(kx*kx+ky*ky,3);
+			factor = factor + 3639.78*pow(kx*kx+ky*ky,4);
+			factor = factor - 3071.54*pow(kx*kx+ky*ky,5);
+			factor = factor + 1784.53*pow(kx*kx+ky*ky,6);
+			factor = factor - 740.826*pow(kx*kx+ky*ky,7);
+			factor = factor + 207.399*pow(kx*kx+ky*ky,8);
+			factor = factor - 33.7625*pow(kx*kx+ky*ky,9);
+			factor = factor + 2.34294*pow(kx*kx+ky*ky,10);
+			factor = factor*exp(-1.44*(kx*kx+ky*ky));
+        V_E = factor*dens;
+    ]]>
+	</evaluation>
+  </computed_vector>
+
+  <vector name="wavefunction" type="complex" dimensions="x y">
+    <components> phi </components>
+    <initialisation>
+	    <![CDATA[
+		    phi = exp(-(pow(x-35,2)+pow(y-35,2))/2000);
+            ]]>
+    </initialisation>
+  </vector>
+  
+  <computed_vector name="normalisation" dimensions="" type="real">
+    <components> Ncalc </components>
+    <evaluation>
+      <dependencies basis="x y">wavefunction</dependencies>
+      <![CDATA[
+        // Calculate the current normalisation of the wave function.
+        Ncalc = mod2(phi);
+      ]]>
+    </evaluation>
+  </computed_vector>
+
+  <sequence>
+      <filter>
+        <![CDATA[
+          printf("Hello world from a filter segment!\n");
+        ]]>
+      </filter>
+
+    <filter>
+        <dependencies>normalisation wavefunction</dependencies>
+      <![CDATA[
+        phi *= sqrt(Nparticles/Ncalc);
+      ]]>
+    </filter>
+
+    <integrate algorithm="ARK45" interval="64.0" steps="8000" tolerance="1e-8">
+      <samples>50 50</samples>
+      <filters where="step end">
+        <filter>
+          <dependencies>wavefunction normalisation</dependencies>
+          <![CDATA[
+            // Correct normalisation of the wavefunction
+            phi *= sqrt(Nparticles/Ncalc);
+          ]]>
+        </filter>
+      </filters>
+      <operators>
+	  <operator kind="ip" dimensions="x">
+          <operator_names>Tx</operator_names>
+          <![CDATA[
+            Tx = -0.5*kx*kx;
+          ]]>
+          </operator>
+          <operator kind="ip" dimensions="y">
+          <operator_names>Ty</operator_names>
+          <![CDATA[
+            Ty = -0.5*ky*ky;
+          ]]>
+          </operator>
+        <integration_vectors>wavefunction</integration_vectors>
+        <dependencies>potential convolution</dependencies>
+        <![CDATA[
+          dphi_dt = Tx[phi] + Ty[phi] - (V_E)*phi;
+        ]]>
+      </operators>
+    </integrate>
+
+    <breakpoint filename="groundstate_break.xsil" format="ascii">
+      <dependencies basis="kx ky">wavefunction </dependencies>
+    </breakpoint>
+
+  </sequence>
+
+  <output filename="groundstate.xsil">
+      <sampling_group basis="x y" initial_sample="yes">
+        <moments>norm_dens</moments>
+        <dependencies>wavefunction normalisation</dependencies>
+        <![CDATA[
+          norm_dens = mod2(phi);
+        ]]>
+</sampling_group>
+      <sampling_group basis="kx ky" initial_sample="yes">
+        <moments>norm_dens_k</moments>
+        <dependencies>wavefunction normalisation</dependencies>
+        <![CDATA[
+          norm_dens_k = mod2(phi);
+        ]]>
+      </sampling_group>
+ 
+  </output>
+</simulation>
