@@ -5,7 +5,7 @@ This code projects the ground state from an initial ansatz by numerically solvin
 
 ## Instructions
 
-See the XMDS2 webpage for details of compilations, executing and analysis of data.
+See the XMDS2 webpage for details of compilations, executing and analysis of data [2].
 
 ## Bibliography
 
