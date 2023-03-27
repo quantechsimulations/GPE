@@ -3,7 +3,7 @@
   <name>groundstate</name>
   <author>V. Zampronio</author>
   <description>
-    Calculate the ground state of the 3D GP equation in a gaussian-like magnetic trap
+    Calculate the ground state of the 2D GP equation
     with contact and long range interactions.
     This is done by evolving it in imaginary time while re-normalising each timestep.
   </description>
